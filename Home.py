@@ -15,13 +15,16 @@ import platform
 import urllib.request
 import zipfile
 import stat
-
+import datetime
+import boto3
+from io import StringIO
 
 from streamlit_option_menu import option_menu
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 openai_model_id = os.getenv("OPENAI_MODEL_ID")
-terraform_version = os.getenv("TERRAFORM_VERSION") 
+s3_bucket = os.getenv("S3_BUCKET")
+terraform_version = os.getenv("TERRAFORM_VERSION")
 display_options = ['template', 'llm notes']
 
 MAX_TOKENS = 3500
@@ -142,6 +145,7 @@ def terraform_description_callback(text_area_key: str):
     if st.session_state.chatbot.num_tokens > MAX_TOKENS:
         st.session_state.messages.append(
             {'role': 'assistant', 'content': f'Exceeded the token limit of {MAX_TOKENS}. Please start a new session'})
+        end_session()
 
     else:
         preface, st.session_state.terraform_template = get_terraform_template(
@@ -167,8 +171,20 @@ def start_session():
     st.session_state.show_text_area = True
     st.session_state.show_fn_model_id_input = True
     st.session_state.show_provider_radio = True
-    st.session_state.terraform_dir_name = f'terraform_{uuid.uuid4()}'
     st.session_state.llm_notes = []
+    uuid_str = uuid.uuid4()
+    st.session_state.terraform_dir_name = f'terraform_{uuid_str}'
+    time_str = datetime.datetime.now().strftime("%Y/%m/%d/%H")
+    st.s3_key = f'{time_str}/{uuid_str}'
+
+
+def end_session():
+    st.session_state.show_text_area = False
+
+    # storage and cleanup
+    shutil.rmtree(f'./{st.session_state.terraform_dir_name}')
+    client = boto3.client('s3')
+    client.put_object(Bucket=s3_bucket, Key=st.s3_key, Body=StringIO(st.session_state.chatbot.chain.memory.buffer).getvalue())
 
 
 def terraform_options_callback(key: str):
@@ -187,10 +203,11 @@ def render_messages():
         else:
             message(m['content'], is_user=True if m['role']
                     == 'user' else False, key=f'{i}_chat')
-            
+
+
 def download_terraform():
     if (Path.cwd()/'terraform').exists():
-        return 
+        return
     platform_name = platform.system().lower()
     base_url = f"https://releases.hashicorp.com/terraform/{terraform_version}"
     zip_file = f"terraform_{terraform_version}_{platform_name}_amd64.zip"
@@ -205,7 +222,7 @@ def download_terraform():
     executable_path = './terraform'
     executable_stat = os.stat(executable_path)
     os.chmod(executable_path, executable_stat.st_mode | stat.S_IEXEC)
-    
+
 
 def main():
 
@@ -220,7 +237,7 @@ def main():
         st.session_state.messages = [
             {'role': 'assistant',
              'content': 'Welcome to InfraBot! Your bespoke AI-powered Terraform IaaS builder!'},
-            {'role': 'assistant', 'content': 'To start a new session, press the \'Start session\' button in the sidebar.'}]
+            {'role': 'assistant', 'content': 'To start a new session, press the \'Start session\' button in the sidebar. When you are satisfied with your template you can press \'End session\' '}]
 
     if 'chatbot' not in st.session_state:
         st.session_state.chatbot = Chatbot(openai_model_id, 0)
@@ -235,6 +252,7 @@ def main():
                       type="primary", on_click=start_session)
     st.sidebar.metric(label=f'Number of tokens used out of a max of {MAX_TOKENS}', value=st.session_state.chatbot.num_tokens,
                       delta=st.session_state.chatbot.num_tokens_delta)
+    st.sidebar.button('End session', key='end_session', on_click=end_session)
     # st.sidebar.progress(int(
     #    100*st.session_state.chatbot.num_tokens/MAX_TOKENS), text=f'% of {MAX_TOKENS} tokens used')
 

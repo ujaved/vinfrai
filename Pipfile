@@ -9,6 +9,7 @@ openai = "*"
 langchain = "*"
 streamlit-chat = "*"
 streamlit_option_menu = "*"
+boto3 = "*"
 
 [dev-packages]
 
