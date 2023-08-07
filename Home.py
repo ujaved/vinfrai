@@ -33,6 +33,7 @@ MAX_ERROR_RETRIES = 3
 
 
 def parse_llm_response(resp: str, llm_notes: list[str]) -> tuple[str, str]:
+    template = ''
     if 'hcl' in resp:
         fields = resp.split('```hcl')
         preface = fields[0]
@@ -43,7 +44,8 @@ def parse_llm_response(resp: str, llm_notes: list[str]) -> tuple[str, str]:
     else:
         fields = resp.split('```')
         preface = fields[0]
-        template = fields[1]
+        if len(fields) >= 2:
+          template = fields[1]
         if len(fields) >= 3:
             llm_notes.append(fields[2])
 
@@ -278,9 +280,12 @@ def main():
     st.sidebar.header('InfraBot')
     st.sidebar.write(
         'InfraBot is an AI-powered Terraform template builder. It generates and validates a terraform template for your provider of choice based on a conversation with you. It is built as an interface on top of ChatGPT.')
-    download_terraform()
     if 'sessions' not in st.session_state:
         st.session_state.sessions = []
+        st.video("https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
+    else:
+        st.sidebar.video("https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
+    download_terraform() 
     message('Welcome to InfraBot! Your bespoke AI-powered Terraform IaaS builder!')
     message('To start a new session, press the \'Start session\' button in the sidebar. When you are satisfied with your template you can press \'End session\' ')
 
