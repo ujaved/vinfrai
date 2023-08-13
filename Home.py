@@ -29,7 +29,7 @@ terraform_version = os.getenv("TERRAFORM_VERSION")
 display_options = ['template', 'llm notes']
 
 MAX_TOKENS = 3500
-MAX_ERROR_RETRIES = 3
+MAX_ERROR_RETRIES = 2
 
 
 def parse_llm_response(resp: str, llm_notes: list[str]) -> tuple[str, str]:
@@ -45,7 +45,7 @@ def parse_llm_response(resp: str, llm_notes: list[str]) -> tuple[str, str]:
         fields = resp.split('```')
         preface = fields[0]
         if len(fields) >= 2:
-          template = fields[1]
+            template = fields[1]
         if len(fields) >= 3:
             llm_notes.append(fields[2])
 
@@ -101,11 +101,10 @@ class Chatbot:
                 prompt=PROMPT, llm=llm, memory=ConversationBufferMemory(), verbose=True)
 
         if self.start:
-            # set by the radio button
-            provider = st.session_state.provider
-
             self.start = False
-            prompt = f'For provider {provider} give me a terraform template for {input}'
+            prompt = f'For provider {st.session_state.provider} give me a terraform template for {input}'
+            if st.session_state.provider == 'gcp':
+                prompt += 'In the "provider" block do not include the "credentials" and "project" properties'
         else:
             # for subsequent chat messages, always use the base, not the finetuned llm
             if self.model_id != openai_model_id:
@@ -141,10 +140,7 @@ class session:
     chatbot: Chatbot = Chatbot(openai_model_id, 0)
     tab = None
 
-    def get_terraform_template(self, spec: str):
-        with st.spinner('generating template'):
-            preface, self.terraform_template = parse_llm_response(
-                self.chatbot.response(spec), self.llm_notes)
+    def try_validate(self) -> str:
         with st.spinner('validating template'):
             err, err_source = validate_template(
                 self.terraform_template, self.terraform_dir_name)
@@ -159,8 +155,15 @@ class session:
                     self.terraform_template, self.terraform_dir_name)
             num_retry += 1
 
-        if err:
-            preface = "I'm sorry attempts to validate the template has resulted in the request exceeding max tokens available. Here is your most recent template."
+    def get_terraform_template(self, spec: str):
+        with st.spinner('generating template'):
+            preface, self.terraform_template = parse_llm_response(
+                self.chatbot.response(spec), self.llm_notes)
+
+        if st.session_state.validate_template:
+            err = self.try_validate()
+            if err:
+              preface = "I'm sorry attempts to validate the template has resulted in the request exceeding max tokens available. Here is your most recent template."
         self.add_message({'role': 'assistant', 'content': preface})
         self.add_message({'role': 'terraform_options'})
 
@@ -275,23 +278,27 @@ def download_terraform():
 def main():
 
     st.set_page_config(
-        page_title="InfraBot",page_icon="👋",layout="wide"
+        page_title="InfraBot", page_icon="👋", layout="wide"
     )
     st.sidebar.header('InfraBot')
     st.sidebar.write(
         'InfraBot is an AI-powered Terraform template builder. It generates and validates a terraform template for your provider of choice based on a conversation with you. It is built as an interface on top of ChatGPT.')
     if 'sessions' not in st.session_state:
         st.session_state.sessions = []
-        st.video("https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
+        st.video(
+            "https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
     else:
-        st.sidebar.video("https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
-    download_terraform() 
+        st.sidebar.video(
+            "https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
+    download_terraform()
     message('Welcome to InfraBot! Your bespoke AI-powered Terraform IaaS builder!')
     message('To start a new session, press the \'Start session\' button in the sidebar. When you are satisfied with your template you can press \'End session\' ')
 
     st.sidebar.button('Start Session', key='start_session',
                       type="primary", on_click=start_session)
-    st.sidebar.radio("provider", ["aws", "gcp"], key="provider", disabled=True)
+    st.sidebar.radio("provider", ["aws", "gcp"], key="provider")
+    st.sidebar.checkbox("validate template", value=True,
+                        key="validate_template")
     st.sidebar.button('End Session', key=end_session, on_click=end_session)
     # st.sidebar.progress(int(
     #    100*st.session_state.chatbot.num_tokens/MAX_TOKENS), text=f'% of {MAX_TOKENS} tokens used')
