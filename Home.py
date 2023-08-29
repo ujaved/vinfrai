@@ -300,8 +300,6 @@ def main():
     st.sidebar.checkbox("validate template", value=True,
                         key="validate_template")
     st.sidebar.button('End Session', key=end_session, on_click=end_session)
-    # st.sidebar.progress(int(
-    #    100*st.session_state.chatbot.num_tokens/MAX_TOKENS), text=f'% of {MAX_TOKENS} tokens used')
 
     session_tab_names = ["session " + str(s.id)
                          for s in st.session_state.sessions]

@@ -10,6 +10,9 @@ langchain = "*"
 streamlit-chat = "*"
 streamlit_option_menu = "*"
 boto3 = "*"
+streamlit-extras = "*"
+chromadb = "*"
+tiktoken = "*"
 
 [dev-packages]
 
