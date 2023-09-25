@@ -6,7 +6,7 @@ name = "pypi"
 [packages]
 streamlit = "*"
 openai = "*"
-langchain = "*"
+langchain = "~=0.0.292"
 streamlit-chat = "*"
 streamlit_option_menu = "*"
 boto3 = "*"

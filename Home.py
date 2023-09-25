@@ -1,48 +1,21 @@
-from xml.dom import VALIDATION_ERR
 import streamlit as st
 import os
 import openai
-from langchain.chat_models import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationChain
-from langchain.callbacks import OpenAICallbackHandler
-from langchain.callbacks import get_openai_callback
-from dataclasses import dataclass, field
 from pathlib import Path
 import shutil
-import subprocess
-import uuid
-import platform
-import urllib.request
-import zipfile
-import stat
-import datetime
 import boto3
 from io import StringIO
-from langchain.prompts.prompt import PromptTemplate
-from langchain.callbacks.base import BaseCallbackHandler
+from utils.terraform import download_terraform, validate_template
+import uuid
+import datetime
+from dataclasses import dataclass, field
+from chatbot import MAX_QUESTIONS, Chatbot, MAX_ERROR_RETRIES, MAX_TOKENS, VALIDATE_ERR_MSG, Question
 
-from streamlit_option_menu import option_menu
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 openai_model_id = os.getenv("OPENAI_MODEL_ID")
 s3_bucket = os.getenv("S3_BUCKET")
-terraform_version = os.getenv("TERRAFORM_VERSION")
 display_options = ['template', 'llm notes']
-
-MAX_TOKENS = 3500
-MAX_ERROR_RETRIES = 2
-
-VALIDATE_ERR_MSG = "I'm sorry attempts to validate the template has resulted in the request exceeding max tokens available"
-
-class StreamHandler(BaseCallbackHandler):
-    def __init__(self, container):
-        self.container = container
-        self.text = ""
-
-    def on_llm_new_token(self, token: str, **kwargs) -> None:
-        self.text += token
-        self.container.markdown(self.text)
 
 
 def parse_llm_response(resp: str, llm_notes: list[str]) -> tuple[str, str]:
@@ -65,73 +38,8 @@ def parse_llm_response(resp: str, llm_notes: list[str]) -> tuple[str, str]:
     return (preface, template)
 
 
-def validate_template(template: str, terraform_dir_name: str) -> tuple[str, str]:
-
-    # remove output directory for safety
-    if (Path.cwd()/terraform_dir_name).exists():
-        shutil.rmtree(f'./{terraform_dir_name}')
-
-    os.mkdir(f'./{terraform_dir_name}')
-    with open(f'./{terraform_dir_name}/main.tf', 'w') as f:
-        f.write(template)
-    os.chdir(f'./{terraform_dir_name}')
-
-    result = subprocess.run(['../terraform', 'init'],
-                            capture_output=True, text=True)
-
-    # only run plan if init has no errors
-    err_source = "terraform plan"
-    if len(result.stderr) == 0:
-        result = subprocess.run(['../terraform', 'plan'],
-                                capture_output=True, text=True)
-    else:
-        err_source = "terraform init"
-
-    os.chdir('../')
-    return (result.stderr, err_source)
-
-
 @dataclass
-class Chatbot:
-    model_id: str
-    temperature: float
-    start: bool = True
-    chain: any = None
-    num_tokens: int = 0
-    num_tokens_delta: int = 0
-
-    def response(self, input: str) -> str:
-        if self.chain is None:
-            llm = ChatOpenAI(model_name=self.model_id,
-                             temperature=self.temperature, streaming=True)
-            template = """The following is a friendly conversation between a human and an AI. The AI is talkative and provides lots of specific details from its context.
-                          Current conversation: {history}
-                          Human: {input}
-                          AI:"""
-            PROMPT = PromptTemplate(
-                input_variables=["history", "input"], template=template)
-            self.chain = ConversationChain(
-                prompt=PROMPT, llm=llm, memory=ConversationBufferMemory(), verbose=True)
-
-        if self.start:
-            self.start = False
-            prompt = f'For provider {st.session_state.provider} give me a terraform template for {input}'
-            if st.session_state.provider == 'gcp':
-                prompt += 'In the "provider" block do not include the "credentials" and "project" properties'
-        else:
-            prompt = f'For the above terraform template, {input}'
-
-        with get_openai_callback() as cb:
-            # for every response, we create a new stream handler; if not, response would use the old container
-            self.chain.llm.callbacks = [StreamHandler(st.empty())]
-            resp = self.chain.run(prompt)
-            self.num_tokens_delta = cb.total_tokens - self.num_tokens
-            self.num_tokens = cb.total_tokens
-        return resp
-
-
-@dataclass
-class session:
+class Session:
     # id is supposed to be the index in an array of sessions
     id: int
     messages: list[str] = field(default_factory=lambda: [
@@ -144,8 +52,17 @@ class session:
     time_str: str = datetime.datetime.now().strftime("%Y/%m/%d/%H")
     s3_key: str = f'{time_str}/{uuid_str}'
     show_chat_input: str = True
-    chatbot: Chatbot = Chatbot(openai_model_id, 0)
+    chatbot: Chatbot = Chatbot(os.getenv("OPENAI_MODEL_ID"), 0)
     tab = None
+    initial_spec: str = ''
+    user_q_a: list[tuple[Question, str]] = field(default_factory=list)
+    user_q_id_to_display: int = 0
+
+    def create_prompt_from_qa(self) -> str:
+        prompt = f'For provider {st.session_state.provider} give me a terraform template for {self.initial_spec} with the following additional specifications \n\n'
+        for q in self.user_q_a:
+            prompt += f'question {q[0].question}. answer: {q[1]}\n'
+        return prompt
 
     def try_validate(self) -> str:
         with st.spinner('validating template'):
@@ -178,12 +95,32 @@ class session:
             err = self.try_validate()
             if err:
                 preface = VALIDATE_ERR_MSG
+                
         self.messages.append({'role': 'assistant', 'content': preface})
+
+    def render_question_radios(self) -> bool:
+        for i in range(self.user_q_id_to_display+1):
+            if i == MAX_QUESTIONS:
+                if not self.terraform_template:
+                    self.get_terraform_template(self.create_prompt_from_qa())
+                    return True
+                break
+            q = self.user_q_a[i][0]
+            key = f'{i}_{self.id}_user_q'
+            st.radio(f'**{q.topic}**: {q.question}', q.possible_answers, horizontal=True, key=key,
+                     index=None, on_change=user_question_radio_cb, args=(key,), disabled=i < self.user_q_id_to_display)
+        return False
 
     def render_messages(self):
         for m in self.messages:
-            with st.chat_message(m["role"]):
-                st.markdown(m["content"])
+            if m['role'] == 'user_questions':
+                # if rendering the question radios results in the rendering of the template, 
+                # break since otherwise the template will be rendered twice
+                if self.render_question_radios():
+                    break
+            else:
+                with st.chat_message(m["role"]):
+                    st.markdown(m["content"])
 
     def render(self):
         with self.tab:
@@ -194,7 +131,15 @@ class session:
             self.show_chat_input = True
         if self.show_chat_input:
             key = f'{self.id}_terraform_description'
-            st.chat_input('user input', key=key, on_submit=terraform_description_callback, args=(key,))
+            st.chat_input('user input', key=key,
+                          on_submit=terraform_description_callback, args=(key,))
+
+
+def user_question_radio_cb(key: str):
+    cur_session = st.session_state.sessions[-1]
+    q = cur_session.user_q_a[cur_session.user_q_id_to_display][0] 
+    cur_session.user_q_a[cur_session.user_q_id_to_display] = (q, st.session_state[key])
+    cur_session.user_q_id_to_display += 1
 
 
 def terraform_description_callback(chat_input_key: str):
@@ -202,21 +147,34 @@ def terraform_description_callback(chat_input_key: str):
     if len(spec) == 0:
         return
     session_id = int(chat_input_key.split("_")[0])
-    with st.session_state.sessions[session_id].tab:
+    session = st.session_state.sessions[session_id]
+    with session.tab:
         with st.chat_message('user'):
             st.markdown(spec)
-    st.session_state.sessions[session_id].messages.append(
-        {'role': 'user', 'content': spec})
-    chatbot = st.session_state.sessions[session_id].chatbot
+    session.messages.append({'role': 'user', 'content': spec})
 
+    chatbot = session.chatbot
     if chatbot.num_tokens > MAX_TOKENS:
-        st.session_state.sessions[session_id].messages.append(
+        session.messages.append(
             {'role': 'assistant', 'content': f'Exceeded the token limit of {MAX_TOKENS}. Please start a new session'})
         end_session()
     else:
-        st.session_state.sessions[session_id].get_terraform_template(spec)
+        if not session.initial_spec:
+            session.initial_spec = spec
+            ai_starter_msg = "Certainly! Let's start with a few questions that will help me generate your initial template."
+            session.messages.append(
+                {'role': 'assistant', 'content': ai_starter_msg})
+            with session.tab:
+                with st.chat_message('assistant'):
+                    st.markdown(ai_starter_msg)
+            with st.spinner('generating clarifying questions'):
+                session.user_q_a = [(q, '')
+                                    for q in chatbot.spec_gathering_response(spec)]
+                session.messages.append({'role': 'user_questions'})
+        else:
+            session.get_terraform_template(spec)
 
-    st.session_state.sessions[session_id].show_chat_input = False
+    session.show_chat_input = False
 
 
 def start_session():
@@ -224,7 +182,7 @@ def start_session():
     end_session()
 
     id = len(st.session_state.sessions)
-    st.session_state.sessions.append(session(id=id))
+    st.session_state.sessions.append(Session(id=id))
 
 
 def end_session():
@@ -244,25 +202,6 @@ def end_session():
             st.session_state.sessions[session_id].chatbot.chain.memory.buffer).getvalue())
 
 
-def download_terraform():
-    if (Path.cwd()/'terraform').exists():
-        return
-    platform_name = platform.system().lower()
-    base_url = f"https://releases.hashicorp.com/terraform/{terraform_version}"
-    zip_file = f"terraform_{terraform_version}_{platform_name}_amd64.zip"
-    download_url = f"{base_url}/{zip_file}"
-
-    urllib.request.urlretrieve(download_url, zip_file)
-
-    with zipfile.ZipFile(zip_file) as terraform_zip_archive:
-        terraform_zip_archive.extractall('.')
-
-    os.remove(zip_file)
-    executable_path = './terraform'
-    executable_stat = os.stat(executable_path)
-    os.chmod(executable_path, executable_stat.st_mode | stat.S_IEXEC)
-
-
 def validate_template_cb():
     if st.session_state.validate_template_prev:
         st.session_state.validate_template_prev = st.session_state.validate_template
@@ -273,10 +212,11 @@ def validate_template_cb():
     cur_session = st.session_state.sessions[-1]
     if not cur_session.in_progress or not cur_session.terraform_template:
         return
-    
+
     err = cur_session.try_validate()
     if err:
-        cur_session.messages.append({'role': 'assistant', 'content': VALIDATE_ERR_MSG})
+        cur_session.messages.append(
+            {'role': 'assistant', 'content': VALIDATE_ERR_MSG})
 
 
 def main():
@@ -289,14 +229,14 @@ def main():
         'InfraBot is an AI-powered Terraform template builder. It generates and validates a terraform template for your provider of choice based on a conversation with you. It is built as an interface on top of ChatGPT.')
     if 'sessions' not in st.session_state:
         st.session_state.sessions = []
-        
+
     if len(st.session_state.sessions) == 0:
         st.video(
             "https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
     else:
         st.sidebar.video(
             "https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
-    download_terraform()
+    download_terraform(os.getenv("TERRAFORM_VERSION"))
 
     with st.chat_message("assistant"):
         st.markdown(
