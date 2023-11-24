@@ -11,12 +11,10 @@ import datetime
 from dataclasses import dataclass, field
 from chatbot import MAX_QUESTIONS, Chatbot, MAX_ERROR_RETRIES, MAX_TOKENS, VALIDATE_ERR_MSG, Question
 
-
 openai.api_key = os.getenv("OPENAI_API_KEY")
 openai_model_id = os.getenv("OPENAI_MODEL_ID")
 s3_bucket = os.getenv("S3_BUCKET")
 display_options = ['template', 'llm notes']
-
 
 def parse_llm_response(resp: str, llm_notes: list[str]) -> tuple[str, str]:
     template = ''
@@ -236,7 +234,6 @@ def main():
     else:
         st.sidebar.video(
             "https://ai-infra-demo-video-1.s3.amazonaws.com/streamlit-Home-2023-08-05-05-08.mp4")
-    download_terraform(os.getenv("TERRAFORM_VERSION"))
 
     with st.chat_message("assistant"):
         st.markdown(
@@ -252,6 +249,8 @@ def main():
         st.session_state.validate_template_prev = False
 
     st.sidebar.button('End Session', key=end_session, on_click=end_session)
+    
+    download_terraform(os.getenv("TERRAFORM_VERSION"))
 
     session_tab_names = ["session " + str(s.id)
                          for s in st.session_state.sessions]
