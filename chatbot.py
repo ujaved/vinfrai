@@ -1,3 +1,4 @@
+import enum
 from langchain.callbacks import get_openai_callback
 from dataclasses import dataclass
 from langchain.chat_models import ChatOpenAI
@@ -10,7 +11,6 @@ from langchain.callbacks.base import BaseCallbackHandler
 from langchain.utils.openai_functions import convert_pydantic_to_openai_function
 from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
 import streamlit as st
-import openai
 MAX_TOKENS = 3500
 MAX_ERROR_RETRIES = 2
 MAX_QUESTIONS = 5
@@ -25,6 +25,12 @@ class Question(BaseModel):
     possible_answers: list[str] = Field(
         description="The list of possible answers for the question")
 
+    def __str__(self) -> str:
+        s = self.question + "\n"
+        for i, a in enumerate(self.possible_answers):
+            s += f'{i+1}) {a}\n'
+        return s
+
 
 class TemplateSpecQuestionsParams(BaseModel):
     """get clarifying questions for the terraform template"""
@@ -32,26 +38,34 @@ class TemplateSpecQuestionsParams(BaseModel):
         description="List of clarifying questions about what the user wants")
 
 
-class StreamHandler(BaseCallbackHandler):
-    def __init__(self, container):
-        self.container = container
+class StreamlitStreamHandler(BaseCallbackHandler):
+    def __init__(self):
         self.text = ""
+        self.container = st.empty()
 
     def on_llm_new_token(self, token: str, **kwargs) -> None:
         self.text += token
         self.container.markdown(self.text)
 
+class NoopStreamHandler(BaseCallbackHandler):
+    pass
 
-@dataclass
+
 class Chatbot:
-    model_id: str
-    temperature: float
-    start: bool = True
-    chain: any = None
-    num_tokens: int = 0
-    num_tokens_delta: int = 0
+    def __init__(self, model_id: str, temperature: float, stream_handler_class: any) -> None:
+        self.model_id = model_id
+        self.temperature = temperature
+        self.start = True
+        self.num_tokens = 0
+        self.num_tokens_delta = 0
+        self.stream_handler_class = stream_handler_class
 
-    def __post_init__(self):
+
+class OpenAIChatbot(Chatbot):
+
+    def __init__(self, model_id: str, temperature: float, stream_handler_class: any) -> None:
+        super().__init__(model_id=model_id, temperature=temperature,
+                         stream_handler_class=stream_handler_class)
         self.llm = ChatOpenAI(model_name=self.model_id,
                               temperature=self.temperature, streaming=True)
         self.llm_with_functions = ChatOpenAI(
@@ -66,7 +80,7 @@ class Chatbot:
         PROMPT = PromptTemplate(
             input_variables=["history", "input"], template=template)
         self.chain = ConversationChain(
-            prompt=PROMPT, llm=self.llm, memory=ConversationBufferMemory(), verbose=True)
+            prompt=PROMPT, llm=self.llm, memory=ConversationBufferMemory())
 
     def spec_gathering_response(self, user_input: str) -> list[Question]:
         prompt = f"I want to create {user_input}. Give me a terraform template. But before doing so ask me at most {MAX_QUESTIONS} clarifying questions. Each question should have a fixed number of possible answers."
@@ -94,7 +108,7 @@ class Chatbot:
     def response(self, prompt: str) -> str:
         with get_openai_callback() as cb:
             # for every response, we create a new stream handler; if not, response would use the old container
-            self.chain.llm.callbacks = [StreamHandler(st.empty())]
+            self.chain.llm.callbacks = [self.stream_handler_class()]
             resp = self.chain.run(prompt)
             self.num_tokens_delta = cb.total_tokens - self.num_tokens
             self.num_tokens = cb.total_tokens

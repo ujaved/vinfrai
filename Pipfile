@@ -4,15 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-streamlit = "*"
+streamlit = "~=1.28.0"
 openai = "*"
 langchain = "~=0.0.292"
 streamlit-chat = "*"
-streamlit_option_menu = "*"
 boto3 = "*"
-streamlit-extras = "*"
-chromadb = "*"
-tiktoken = "*"
+prompt-toolkit = "*"
+yaspin = "*"
 
 [dev-packages]
 
