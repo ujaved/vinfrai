@@ -1,6 +1,4 @@
-import enum
 from langchain.callbacks import get_openai_callback
-from dataclasses import dataclass
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.memory import ConversationBufferMemory
@@ -11,11 +9,22 @@ from langchain.callbacks.base import BaseCallbackHandler
 from langchain.utils.openai_functions import convert_pydantic_to_openai_function
 from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
 import streamlit as st
+from langchain.llms.base import LLM
+import requests
+import os
+from http import HTTPStatus
+
 MAX_TOKENS = 3500
 MAX_ERROR_RETRIES = 2
 MAX_QUESTIONS = 5
 
 VALIDATE_ERR_MSG = "I'm sorry attempts to validate the template has resulted in the request exceeding max tokens available"
+PROMPT_TEMPLATE = """The following is a friendly conversation between a human and an AI. The AI is talkative and provides lots of specific details from its context.
+                    Current conversation: {history}
+                    Human: {input}
+                    AI:"""
+                    
+SPEC_TEMPLATE = """I want to create {user_input}. Give me a terraform template. But before doing so ask me at most {MAX_QUESTIONS} clarifying questions. Each question should have a fixed number of possible answers."""
 
 
 class Question(BaseModel):
@@ -51,6 +60,19 @@ class NoopStreamHandler(BaseCallbackHandler):
     pass
 
 
+class LlamaLLM(LLM):
+    
+    @property
+    def _llm_type(self) -> str:
+        return "llama"
+    
+    def _call(self, prompt: str, stop=None) -> str:
+        url = os.getenv("COLAB_LLAMA_URL")
+        resp = requests.post(url, json={"prompt": prompt})
+        if resp.status_code != HTTPStatus.OK:
+            return resp.status_code
+        return resp.text
+
 class Chatbot:
     def __init__(self, model_id: str, temperature: float, stream_handler_class: any) -> None:
         self.model_id = model_id
@@ -59,6 +81,12 @@ class Chatbot:
         self.num_tokens = 0
         self.num_tokens_delta = 0
         self.stream_handler_class = stream_handler_class
+        
+    def response(self, prompt: str) -> str:
+        raise NotImplementedError
+    
+    def spec_gathering_response(self, user_input: str) -> list[Question]:
+        raise NotImplementedError
 
 
 class OpenAIChatbot(Chatbot):
@@ -68,23 +96,17 @@ class OpenAIChatbot(Chatbot):
                          stream_handler_class=stream_handler_class)
         self.llm = ChatOpenAI(model_name=self.model_id,
                               temperature=self.temperature, streaming=True)
-        self.llm_with_functions = ChatOpenAI(
-            model_name=self.model_id, temperature=self.temperature).bind(functions=[convert_pydantic_to_openai_function(TemplateSpecQuestionsParams)])
-        self.spec_chain = ChatPromptTemplate.from_messages(
-            [("user", "{prompt}")]) | self.llm_with_functions | JsonOutputFunctionsParser()
-
-        template = """The following is a friendly conversation between a human and an AI. The AI is talkative and provides lots of specific details from its context.
-                    Current conversation: {history}
-                    Human: {input}
-                    AI:"""
         PROMPT = PromptTemplate(
-            input_variables=["history", "input"], template=template)
+            input_variables=["history", "input"], template=PROMPT_TEMPLATE)
         self.chain = ConversationChain(
             prompt=PROMPT, llm=self.llm, memory=ConversationBufferMemory())
+        
+        self.llm_with_functions = ChatOpenAI(
+            model_name=self.model_id, temperature=self.temperature).bind(functions=[convert_pydantic_to_openai_function(TemplateSpecQuestionsParams)])
+        self.spec_chain = ChatPromptTemplate.from_messages([("user", "{prompt}")]) | self.llm_with_functions | JsonOutputFunctionsParser()
 
     def spec_gathering_response(self, user_input: str) -> list[Question]:
-        prompt = f"I want to create {user_input}. Give me a terraform template. But before doing so ask me at most {MAX_QUESTIONS} clarifying questions. Each question should have a fixed number of possible answers."
-        resp = self.spec_chain.invoke({"prompt": prompt})
+        resp = self.spec_chain.invoke({"prompt": SPEC_TEMPLATE.format(user_input=user_input, MAX_QUESTIONS=MAX_QUESTIONS)})
         return TemplateSpecQuestionsParams(**resp).questions
 
         """
@@ -113,3 +135,14 @@ class OpenAIChatbot(Chatbot):
             self.num_tokens_delta = cb.total_tokens - self.num_tokens
             self.num_tokens = cb.total_tokens
         return resp
+
+
+class LLamaChatbot(OpenAIChatbot):
+    
+    def __init__(self) -> None:
+        super().__init__(model_id=os.getenv("OPENAI_MODEL_ID"),temperature=0,stream_handler_class=NoopStreamHandler)
+        self.llm = LlamaLLM()
+        self.chain.llm = self.llm
+
+    def response(self, prompt: str) -> str:
+        return self.chain.run(prompt)

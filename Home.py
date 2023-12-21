@@ -38,6 +38,8 @@ def parse_llm_response(resp: str, llm_notes: list[str]) -> tuple[str, str]:
         if len(fields) >= 3:
             llm_notes.append(fields[2])
 
+    template = template.replace('\\n', '\n')
+    template = template.replace('\\"', '\"')
     return (preface, template)
 
 
@@ -49,7 +51,7 @@ def st_chat_cm(**kwargs):
     finally:
         pass
 
-
+# session is used both in streamlit ui and cli
 @dataclass
 class Session:
     # id is supposed to be the index in an array of sessions
@@ -101,6 +103,8 @@ class Session:
         with self.generate_ctx(**kwargs):
             # chatbot response will write streaming responses in an empty container inside the chat_message container
             response = self.chatbot.response(spec)
+            if response.isdigit():
+                raise Exception("error code from server: {code}".format(code=response))
         preface, self.terraform_template = parse_llm_response(
             response, self.llm_notes)
         preface = response
