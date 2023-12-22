@@ -13,6 +13,7 @@ from langchain.llms.base import LLM
 import requests
 import os
 from http import HTTPStatus
+import json
 
 MAX_TOKENS = 3500
 MAX_ERROR_RETRIES = 2
@@ -71,7 +72,7 @@ class LlamaLLM(LLM):
         resp = requests.post(url, json={"prompt": prompt})
         if resp.status_code != HTTPStatus.OK:
             return resp.status_code
-        return resp.text
+        return json.loads(resp.text)["completion"]
 
 class Chatbot:
     def __init__(self, model_id: str, temperature: float, stream_handler_class: any) -> None:

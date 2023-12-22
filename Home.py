@@ -11,7 +11,7 @@ from typing import Callable
 import datetime
 from dataclasses import dataclass, field
 from contextlib import AbstractContextManager, contextmanager
-from chatbot import MAX_QUESTIONS, Chatbot, MAX_ERROR_RETRIES, MAX_TOKENS, VALIDATE_ERR_MSG, Question, OpenAIChatbot, StreamlitStreamHandler
+from chatbot import MAX_QUESTIONS, Chatbot, MAX_ERROR_RETRIES, MAX_TOKENS, VALIDATE_ERR_MSG, Question, OpenAIChatbot, StreamlitStreamHandler, LLamaChatbot
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 openai_model_id = os.getenv("OPENAI_MODEL_ID")
@@ -52,12 +52,14 @@ def st_chat_cm(**kwargs):
         pass
 
 # session is used both in streamlit ui and cli
+
+
 @dataclass
 class Session:
     # id is supposed to be the index in an array of sessions
     id: int
     messages: list[str] = field(default_factory=lambda: [
-                                {'role': 'assistant', 'content': 'Please select a provider from the sidebar and provide your Terraform specification'}])
+                                {'role': 'assistant', 'content': 'Please select an llm and a provider from the sidebar and provide your Terraform specification'}])
     in_progress: bool = True
     terraform_template: str = ''
     llm_notes: list[str] = field(default_factory=list)
@@ -104,7 +106,8 @@ class Session:
             # chatbot response will write streaming responses in an empty container inside the chat_message container
             response = self.chatbot.response(spec)
             if response.isdigit():
-                raise Exception("error code from server: {code}".format(code=response))
+                raise Exception(
+                    "error code from server: {code}".format(code=response))
         preface, self.terraform_template = parse_llm_response(
             response, self.llm_notes)
         preface = response
@@ -115,6 +118,10 @@ class Session:
                 preface = VALIDATE_ERR_MSG
 
         self.messages.append({'role': 'assistant', 'content': preface})
+
+        # force rerun for codellama to render chat messages
+        if st.session_state.llm == 'codellama':
+            st.rerun()
 
     def render_question_radios(self) -> bool:
         for i in range(self.user_q_id_to_display+1):
@@ -162,6 +169,19 @@ def user_question_radio_cb(key: str):
     cur_session.user_q_id_to_display += 1
 
 
+def llm_selection_cb():
+    # noop when no session has been started
+    if len(st.session_state.sessions) == 0:
+        return
+    cur_session = st.session_state.sessions[-1]
+    if st.session_state.llm == "codellama":
+        cur_session.chatbot = LLamaChatbot()
+    else:
+        cur_session.chatbot = OpenAIChatbot(model_id=os.getenv(
+            "OPENAI_MODEL_ID"), temperature=0, stream_handler_class=StreamlitStreamHandler)
+    st.session_state.disable_llm_selection = True
+
+
 def terraform_description_callback(chat_input_key: str):
     spec = st.session_state[chat_input_key]
     if len(spec) == 0:
@@ -202,7 +222,10 @@ def start_session():
     end_session()
 
     id = len(st.session_state.sessions)
-    st.session_state.sessions.append(Session(id=id))
+    session = Session(id=id)
+    if st.session_state.llm == "codellama":
+        session.chatbot = LLamaChatbot()
+    st.session_state.sessions.append(session)
 
 
 def end_session():
@@ -264,9 +287,14 @@ def main():
         st.markdown(WELCOME_MSG)
         st.markdown('To start a new session, press the \'Start session\' button in the sidebar. When you are satisfied with your template you can press \'End session\' ')
 
+    if 'disable_llm_selection' not in st.session_state:
+        st.session_state.disable_llm_selection = False
+
     st.sidebar.button('Start Session', key='start_session',
                       type="primary", on_click=start_session)
     st.sidebar.radio("provider", ["aws", "gcp"], key="provider")
+    st.sidebar.radio("llm", ["gpt-4", "codellama"],
+                     key="llm", on_change=llm_selection_cb, disabled=st.session_state.disable_llm_selection)
     st.sidebar.checkbox("validate template", value=False,
                         key="validate_template", on_change=validate_template_cb)
     if 'validate_template_prev' not in st.session_state:
