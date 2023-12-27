@@ -16,7 +16,7 @@ from http import HTTPStatus
 import json
 
 MAX_TOKENS = 3500
-MAX_ERROR_RETRIES = 2
+MAX_ERROR_RETRIES = 3
 MAX_QUESTIONS = 5
 
 VALIDATE_ERR_MSG = "I'm sorry attempts to validate the template has resulted in the request exceeding max tokens available"
@@ -25,7 +25,7 @@ PROMPT_TEMPLATE = """The following is a friendly conversation between a human an
                     Human: {input}
                     AI:"""
                     
-SPEC_TEMPLATE = """I want to create {user_input}. Give me a terraform template. But before doing so ask me at most {MAX_QUESTIONS} clarifying questions. Each question should have a fixed number of possible answers."""
+SPEC_TEMPLATE = """I want to create {user_input}. Give me a terraform template. But before doing so ask me at most {MAX_QUESTIONS} clarifying questions. No question should ask about resource naming. Each question should have a fixed number of possible answers."""
 
 
 class Question(BaseModel):

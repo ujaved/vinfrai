@@ -1,16 +1,16 @@
 import argparse
-from utils.terraform import download_terraform
-from Home import WELCOME_MSG, AI_STARTER_MSG, Session
+from utils.terraform import download_terraform, validate_terratest
+from Home import WELCOME_MSG
+from session import AI_STARTER_MSG, CliSession
 from prompt_toolkit import PromptSession
 from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import SqlLexer
 import os
 from yaspin import yaspin
-from chatbot import OpenAIChatbot, LLamaChatbot, NoopStreamHandler
-from collections import Counter
+from chatbot import LLamaChatbot, OpenAIChatbot, NoopStreamHandler
 
 
-def get_qa_spec_prompt(user_spec: str, chat_session: Session, prompt_session: PromptSession, provider: str) -> str:
+def get_qa_spec_prompt(user_spec: str, chat_session: CliSession, prompt_session: PromptSession) -> str:
     print(AI_STARTER_MSG)
     with yaspin(text="generating clarifying questions", color="yellow"):
         chat_session.user_q_a = [
@@ -21,7 +21,7 @@ def get_qa_spec_prompt(user_spec: str, chat_session: Session, prompt_session: Pr
             user_answer = q_a[0].possible_answers[int(user_answer)-1]
         chat_session.user_q_a[i] = (q_a[0], user_answer)
 
-    return chat_session.create_prompt_from_qa(provider)
+    return chat_session.create_prompt_from_qa()
      
 
 
@@ -29,29 +29,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model-id', type=str,
                         required=True, choices=["gpt-4", "codellama_7b"])
-    parser.add_argument('-p', '--provider', type=str,
-                        required=True, choices=["aws", "gcp"])
     parser.add_argument('-v', '--validate', action='store_true')
+    parser.add_argument('-t', '--terratest', action='store_true')
     args = parser.parse_args()
 
     download_terraform(os.getenv("TERRAFORM_VERSION"))
 
     if args.model_id == "gpt-4":
-        chat_session = Session(id=0, chatbot=OpenAIChatbot(model_id=os.getenv(
-            "OPENAI_MODEL_ID"), temperature=0, stream_handler_class=NoopStreamHandler), validate_ctx=yaspin, generate_ctx=yaspin)
+        chat_session = CliSession(id=0, terratest=args.terratest, validate_ctx=yaspin, generate_ctx=yaspin, chatbot=OpenAIChatbot(model_id=os.getenv("OPENAI_MODEL_ID"), temperature=0, stream_handler_class=NoopStreamHandler))
     elif args.model_id == "codellama_7b":
-        chat_session = Session(id=0, chatbot=LLamaChatbot(), validate_ctx=yaspin, generate_ctx=yaspin)
+        chat_session = CliSession(id=0, chatbot=LLamaChatbot(), validate_ctx=yaspin, generate_ctx=yaspin)
 
     prompt_session = PromptSession(lexer=PygmentsLexer(SqlLexer))
     user_spec = prompt_session.prompt(
         WELCOME_MSG + '\nPlease specify what you would like in your template. >')
     
-    prompt = get_qa_spec_prompt(user_spec, chat_session, prompt_session, args.provider)
+    prompt = get_qa_spec_prompt(user_spec, chat_session, prompt_session)
 
     while True:
         try:
             while len(prompt.strip()) == 0:
-              prompt = prompt_session.prompt('> ')    
+              prompt = prompt_session.prompt('> ')
+            if args.terratest:
+                prompt += "\n Regenerate the terratest file."    
             chat_session.get_terraform_template(spec=prompt, validate=args.validate, **{
                                         "text": "generating terraform template", "color": "green"})
             print(chat_session.terraform_template)
