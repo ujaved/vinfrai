@@ -10,10 +10,8 @@ from langchain.utils.openai_functions import convert_pydantic_to_openai_function
 from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
 import streamlit as st
 from langchain.llms.base import LLM
-import requests
 import os
-from http import HTTPStatus
-import json
+import replicate
 
 MAX_TOKENS = 3500
 MAX_ERROR_RETRIES = 3
@@ -57,22 +55,27 @@ class StreamlitStreamHandler(BaseCallbackHandler):
         self.text += token
         self.container.markdown(self.text)
 
+
 class NoopStreamHandler(BaseCallbackHandler):
     pass
 
 
 class LlamaLLM(LLM):
-    
+
     @property
     def _llm_type(self) -> str:
         return "llama"
-    
+
     def _call(self, prompt: str, stop=None) -> str:
-        url = os.getenv("COLAB_LLAMA_URL")
-        resp = requests.post(url, json={"prompt": prompt})
-        if resp.status_code != HTTPStatus.OK:
-            return resp.status_code
-        return json.loads(resp.text)["completion"]
+        resp = ""
+        output = replicate.run(
+            "meta/codellama-34b-instruct:b17fdb44c843000741367ae3d73e2bb710d7428a662238ddebbf4302db2b5422",
+            input={"prompt": prompt, "max_tokens": 5000}
+        )
+        for o in output:
+            resp += o
+        return resp
+
 
 class Chatbot:
     def __init__(self, model_id: str, temperature: float, stream_handler_class: any) -> None:
@@ -82,10 +85,10 @@ class Chatbot:
         self.num_tokens = 0
         self.num_tokens_delta = 0
         self.stream_handler_class = stream_handler_class
-        
+
     def response(self, prompt: str) -> str:
         raise NotImplementedError
-    
+
     def spec_gathering_response(self, user_input: str) -> list[Question]:
         raise NotImplementedError
 
@@ -101,13 +104,15 @@ class OpenAIChatbot(Chatbot):
             input_variables=["history", "input"], template=PROMPT_TEMPLATE)
         self.chain = ConversationChain(
             prompt=PROMPT, llm=self.llm, memory=ConversationBufferMemory())
-        
+
         self.llm_with_functions = ChatOpenAI(
             model_name=self.model_id, temperature=self.temperature).bind(functions=[convert_pydantic_to_openai_function(TemplateSpecQuestionsParams)])
-        self.spec_chain = ChatPromptTemplate.from_messages([("user", "{prompt}")]) | self.llm_with_functions | JsonOutputFunctionsParser()
+        self.spec_chain = ChatPromptTemplate.from_messages(
+            [("user", "{prompt}")]) | self.llm_with_functions | JsonOutputFunctionsParser()
 
     def spec_gathering_response(self, user_input: str) -> list[Question]:
-        resp = self.spec_chain.invoke({"prompt": SPEC_TEMPLATE.format(user_input=user_input, MAX_QUESTIONS=MAX_QUESTIONS)})
+        resp = self.spec_chain.invoke({"prompt": SPEC_TEMPLATE.format(
+            user_input=user_input, MAX_QUESTIONS=MAX_QUESTIONS)})
         return TemplateSpecQuestionsParams(**resp).questions
 
         """
@@ -139,9 +144,10 @@ class OpenAIChatbot(Chatbot):
 
 
 class LLamaChatbot(OpenAIChatbot):
-    
+
     def __init__(self) -> None:
-        super().__init__(model_id=os.getenv("OPENAI_MODEL_ID"),temperature=0,stream_handler_class=NoopStreamHandler)
+        super().__init__(model_id=os.getenv("OPENAI_MODEL_ID"),
+                         temperature=0, stream_handler_class=NoopStreamHandler)
         self.llm = LlamaLLM()
         self.chain.llm = self.llm
 

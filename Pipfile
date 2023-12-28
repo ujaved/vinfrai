@@ -11,6 +11,7 @@ streamlit-chat = "*"
 boto3 = "*"
 prompt-toolkit = "*"
 yaspin = "*"
+replicate = "*"
 
 [dev-packages]
 
