@@ -38,7 +38,7 @@ def main():
     if args.model_id == "gpt-4":
         chat_session = CliSession(id=0, terratest=args.terratest, validate_ctx=yaspin, generate_ctx=yaspin, chatbot=OpenAIChatbot(model_id=os.getenv("OPENAI_MODEL_ID"), temperature=0, stream_handler_class=NoopStreamHandler))
     elif args.model_id == "codellama_7b":
-        chat_session = CliSession(id=0, chatbot=LLamaChatbot(), validate_ctx=yaspin, generate_ctx=yaspin)
+        chat_session = CliSession(id=0, terratest=args.terratest, chatbot=LLamaChatbot(), validate_ctx=yaspin, generate_ctx=yaspin)
 
     prompt_session = PromptSession(lexer=PygmentsLexer(SqlLexer))
     user_spec = prompt_session.prompt(

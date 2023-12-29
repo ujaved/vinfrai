@@ -70,7 +70,7 @@ class LlamaLLM(LLM):
         resp = ""
         output = replicate.run(
             "meta/codellama-34b-instruct:b17fdb44c843000741367ae3d73e2bb710d7428a662238ddebbf4302db2b5422",
-            input={"prompt": prompt, "max_tokens": 5000}
+            input={"prompt": prompt, "max_tokens": 3000}
         )
         for o in output:
             resp += o
