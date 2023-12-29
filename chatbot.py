@@ -22,7 +22,7 @@ PROMPT_TEMPLATE = """The following is a friendly conversation between a human an
                     Current conversation: {history}
                     Human: {input}
                     AI:"""
-                    
+
 SPEC_TEMPLATE = """I want to create {user_input}. Give me a terraform template. But before doing so ask me at most {MAX_QUESTIONS} clarifying questions. No question should ask about resource naming. Each question should have a fixed number of possible answers."""
 
 

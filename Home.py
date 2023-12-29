@@ -3,6 +3,7 @@ import os
 import openai
 from utils.terraform import download_terraform
 from chatbot import VALIDATE_ERR_MSG, OpenAIChatbot, StreamlitStreamHandler, LLamaChatbot
+from session import start_session, end_session
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 openai_model_id = os.getenv("OPENAI_MODEL_ID")

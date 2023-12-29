@@ -15,7 +15,6 @@ from pathlib import Path
 import shutil
 import boto3
 from io import StringIO
-from yaspin import yaspin
 
 
 PROMPT_FROM_QA_PREFIX = """For provider aws give me a terraform template for {initial_spec} with the following additional specifications. \n\n"""
@@ -39,7 +38,9 @@ def start_session():
     end_session()
 
     id = len(st.session_state.sessions)
-    session = StreamlitSession(id=id)
+    session = StreamlitSession(id=id, validate_ctx=st.spinner, generate_ctx=st_chat_cm, chatbot=OpenAIChatbot(
+        model_id=os.getenv("OPENAI_MODEL_ID"), temperature=0, stream_handler_class=StreamlitStreamHandler))
+
     if st.session_state.llm == "codellama":
         session.chatbot = LLamaChatbot()
     st.session_state.sessions.append(session)
@@ -174,7 +175,7 @@ class Session:
 
 class CliSession(Session):
 
-    def __init__(self, id: int, validate_ctx, generate_ctx, chatbot, terratest: bool):
+    def __init__(self, id: int, validate_ctx, generate_ctx, chatbot:  Chatbot, terratest: bool):
         super().__init__(id=id, validate_ctx=validate_ctx,
                          generate_ctx=generate_ctx, chatbot=chatbot)
         self.terratest = terratest
@@ -225,21 +226,18 @@ class CliSession(Session):
 
 
 class StreamlitSession(Session):
-    def __init__(self, id: int):
-        super().__init__(id=id)
-
-        self.validate_ctx = st.spinner
-        self.generate_ctx = st_chat_cm
+    def __init__(self, id: int, validate_ctx, generate_ctx, chatbot:  Chatbot):
+        super().__init__(id=id, validate_ctx=validate_ctx,
+                         generate_ctx=generate_ctx, chatbot=chatbot)
         self.show_chat_input: str = True
-        self.chatbot = OpenAIChatbot(model_id=os.getenv(
-            "OPENAI_MODEL_ID"), temperature=0, stream_handler_class=StreamlitStreamHandler)
         self.tab = None
 
     def render_question_radios(self) -> bool:
         for i in range(self.user_q_id_to_display+1):
             if i == MAX_QUESTIONS:
                 if not self.terraform_template:
-                    self.get_terraform_template(spec=self.create_prompt_from_qa(), validate=st.session_state.validate_template, **{"container": self.tab})
+                    self.get_terraform_template(spec=self.create_prompt_from_qa(
+                    ), validate=st.session_state.validate_template, **{"container": self.tab})
                     return True
                 break
             q = self.user_q_a[i][0]
