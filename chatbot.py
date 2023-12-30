@@ -66,14 +66,19 @@ class LlamaLLM(LLM):
     def _llm_type(self) -> str:
         return "llama"
 
+    @property
+    def _replicate_endpoint(self) -> str:
+        return "meta/codellama-34b-instruct:b17fdb44c843000741367ae3d73e2bb710d7428a662238ddebbf4302db2b5422"
+
+    # this is the implemented langchain method so that the chain's invoke method works
     def _call(self, prompt: str, stop=None) -> str:
         resp = ""
-        output = replicate.run(
-            "meta/codellama-34b-instruct:b17fdb44c843000741367ae3d73e2bb710d7428a662238ddebbf4302db2b5422",
-            input={"prompt": prompt, "max_tokens": 3000}
-        )
-        for o in output:
-            resp += o
+        container = st.empty()
+        output = replicate.run(self._replicate_endpoint, input={
+                               "prompt": prompt, "max_tokens": 4000})
+        for token in output:
+            resp += token
+            container.markdown(resp)
         return resp
 
 

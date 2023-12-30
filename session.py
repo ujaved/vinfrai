@@ -38,7 +38,7 @@ def start_session():
     end_session()
 
     id = len(st.session_state.sessions)
-    session = StreamlitSession(id=id, validate_ctx=st.spinner, generate_ctx=st_chat_cm, chatbot=OpenAIChatbot(
+    session = StreamlitSession(id=id, validate_ctx=st.spinner, generate_ctx=st_chat_cm, static_validate=st.session_state.validate_template, chatbot=OpenAIChatbot(
         model_id=os.getenv("OPENAI_MODEL_ID"), temperature=0, stream_handler_class=StreamlitStreamHandler))
 
     if st.session_state.llm == "codellama":
@@ -72,6 +72,10 @@ def user_question_radio_cb(key: str):
 
 
 def terraform_description_callback(chat_input_key: str):
+    # disable the llm and validate selections
+    st.session_state.disable_llm_selection = True
+    st.session_state.disable_validate_checkbox = True
+    
     spec = st.session_state[chat_input_key]
     if len(spec) == 0:
         return
@@ -116,6 +120,7 @@ class Session:
 
     chatbot: Chatbot
 
+    static_validate: bool
     messages: list[str] = field(default_factory=lambda: [
                                 {'role': 'assistant', 'content': 'Please select an llm from the sidebar and provide your Terraform specification'}])
     in_progress: bool = True
@@ -157,7 +162,7 @@ class Session:
             num_retry += 1
         return err
 
-    def get_terraform_template(self, spec: str, validate: bool, **kwargs) -> None:
+    def get_terraform_template(self, spec: str, **kwargs) -> None:
         with self.generate_ctx(**kwargs):
             # chatbot response will write streaming responses in an empty container inside the chat_message container
             response = self.chatbot.response(spec)
@@ -165,7 +170,7 @@ class Session:
             response, self.llm_notes)
         preface = response
 
-        if validate:
+        if self.static_validate:
             err = self.try_validate(**kwargs)
             if err:
                 preface = VALIDATE_ERR_MSG
@@ -175,13 +180,13 @@ class Session:
 
 class CliSession(Session):
 
-    def __init__(self, id: int, validate_ctx, generate_ctx, chatbot:  Chatbot, terratest: bool):
-        super().__init__(id=id, validate_ctx=validate_ctx,
-                         generate_ctx=generate_ctx, chatbot=chatbot)
+    def __init__(self, id: int, validate_ctx, generate_ctx, chatbot: Chatbot, static_validate: bool, terratest: bool):
+        super().__init__(id=id, validate_ctx=validate_ctx, generate_ctx=generate_ctx,
+                         static_validate=static_validate, chatbot=chatbot)
         self.terratest = terratest
         self.terratest_dir_name = f'terratest_{self.uuid_str}'
 
-    def get_terraform_template(self, spec: str, validate: bool, **kwargs) -> None:
+    def get_terraform_template(self, spec: str, **kwargs) -> None:
         with self.generate_ctx(**kwargs):
             response = self.chatbot.response(spec)
             if response.isdigit():
@@ -197,7 +202,7 @@ class CliSession(Session):
                     response, self.llm_notes)
 
         err = ''
-        if validate or self.terratest:
+        if self.static_validate or self.terratest:
             err = self.try_validate(**kwargs)
         if self.terratest and not err:
             err = self.try_terratest_validate(**kwargs)
@@ -226,9 +231,9 @@ class CliSession(Session):
 
 
 class StreamlitSession(Session):
-    def __init__(self, id: int, validate_ctx, generate_ctx, chatbot:  Chatbot):
+    def __init__(self, id: int, validate_ctx, generate_ctx, chatbot: Chatbot, static_validate: bool):
         super().__init__(id=id, validate_ctx=validate_ctx,
-                         generate_ctx=generate_ctx, chatbot=chatbot)
+                         generate_ctx=generate_ctx, chatbot=chatbot, static_validate=static_validate)
         self.show_chat_input: str = True
         self.tab = None
 
