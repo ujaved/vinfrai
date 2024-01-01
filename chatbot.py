@@ -1,4 +1,4 @@
-from langchain.callbacks import get_openai_callback
+from langchain.callbacks import get_openai_callback, FileCallbackHandler
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.memory import ConversationBufferMemory
@@ -12,6 +12,7 @@ import streamlit as st
 from langchain.llms.base import LLM
 import os
 import replicate
+from utils import logger
 
 MAX_TOKENS = 3500
 MAX_ERROR_RETRIES = 3
@@ -107,17 +108,15 @@ class OpenAIChatbot(Chatbot):
                               temperature=self.temperature, streaming=True)
         PROMPT = PromptTemplate(
             input_variables=["history", "input"], template=PROMPT_TEMPLATE)
-        self.chain = ConversationChain(
-            prompt=PROMPT, llm=self.llm, memory=ConversationBufferMemory())
+        self.chain = ConversationChain(prompt=PROMPT, llm=self.llm, callbacks=[FileCallbackHandler(os.getenv("LOGFILE"))], memory=ConversationBufferMemory())
 
-        self.llm_with_functions = ChatOpenAI(
-            model_name=self.model_id, temperature=self.temperature).bind(functions=[convert_pydantic_to_openai_function(TemplateSpecQuestionsParams)])
-        self.spec_chain = ChatPromptTemplate.from_messages(
-            [("user", "{prompt}")]) | self.llm_with_functions | JsonOutputFunctionsParser()
+        self.llm_with_functions = ChatOpenAI(model_name=self.model_id, temperature=self.temperature).bind(functions=[convert_pydantic_to_openai_function(TemplateSpecQuestionsParams)])
+        self.spec_chain = ChatPromptTemplate.from_messages([("user", "{prompt}")]) | self.llm_with_functions | JsonOutputFunctionsParser()
 
     def spec_gathering_response(self, user_input: str) -> list[Question]:
         resp = self.spec_chain.invoke({"prompt": SPEC_TEMPLATE.format(
             user_input=user_input, MAX_QUESTIONS=MAX_QUESTIONS)})
+        logger.info(resp)
         return TemplateSpecQuestionsParams(**resp).questions
 
         """
@@ -145,6 +144,7 @@ class OpenAIChatbot(Chatbot):
             resp = self.chain.run(prompt)
             self.num_tokens_delta = cb.total_tokens - self.num_tokens
             self.num_tokens = cb.total_tokens
+        logger.info(resp)
         return resp
 
 
@@ -157,4 +157,6 @@ class LLamaChatbot(OpenAIChatbot):
         self.chain.llm = self.llm
 
     def response(self, prompt: str) -> str:
-        return self.chain.run(prompt)
+        resp = self.chain.run(prompt)
+        logger.info(resp)
+        return resp

@@ -1,5 +1,5 @@
 import argparse
-from utils.terraform import download_terraform, validate_terratest
+from utils.terraform import download_terraform
 from Home import WELCOME_MSG
 from session import AI_STARTER_MSG, CliSession
 from prompt_toolkit import PromptSession

@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
+from . import logger
 
 def download_terraform(terraform_version: str):
     
@@ -42,14 +43,18 @@ def validate_template(template: str, terraform_dir_name: str) -> tuple[str, str]
     os.chdir(f'./{terraform_dir_name}')
 
     # assume terraform binary is present in PATH
+    logger.info('running terraform init')
     result = subprocess.run(['../terraform', 'init'],
                             capture_output=True, text=True)
+    logger.info('terraform init result: ' + str(result.__repr__()))
 
     # only run plan if init has no errors
     err_source = "terraform plan"
     if len(result.stderr) == 0:
+        logger.info('running terraform plan')
         result = subprocess.run(['../terraform', 'plan'],
                                 capture_output=True, text=True)
+        logger.info('terraform plan result: ' + str(result.__repr__()))
     else:
         err_source = "terraform init"
 

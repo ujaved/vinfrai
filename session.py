@@ -75,7 +75,7 @@ def terraform_description_callback(chat_input_key: str):
     # disable the llm and validate selections
     st.session_state.disable_llm_selection = True
     st.session_state.disable_validate_checkbox = True
-    
+
     spec = st.session_state[chat_input_key]
     if len(spec) == 0:
         return

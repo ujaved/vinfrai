@@ -12,6 +12,7 @@ boto3 = "*"
 prompt-toolkit = "*"
 yaspin = "*"
 replicate = "*"
+loguru = "*"
 
 [dev-packages]
 
