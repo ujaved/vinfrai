@@ -37,7 +37,7 @@ def main():
     chatbot = OpenAIChatbot(model_id=os.getenv(
         "OPENAI_MODEL_ID"), temperature=0, stream_handler_class=NoopStreamHandler)
     if args.model_id == "codellama":
-        chatbot = LLamaChatbot()
+        chatbot = LLamaChatbot(temperature=0, stream_handler_class=NoopStreamHandler)
     chat_session = CliSession(id=0, terratest=args.terratest, validate_ctx=yaspin,
                               generate_ctx=yaspin, chatbot=chatbot, static_validate=args.validate)
 

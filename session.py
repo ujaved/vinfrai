@@ -42,7 +42,7 @@ def start_session():
         model_id=os.getenv("OPENAI_MODEL_ID"), temperature=0, stream_handler_class=StreamlitStreamHandler))
 
     if st.session_state.llm == "codellama":
-        session.chatbot = LLamaChatbot()
+        session.chatbot = LLamaChatbot(temperature=0, stream_handler_class=StreamlitStreamHandler)
     st.session_state.sessions.append(session)
 
 

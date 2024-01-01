@@ -13,6 +13,7 @@ from langchain.llms.base import LLM
 import os
 import replicate
 from utils import logger
+from langchain.llms import Replicate
 
 MAX_TOKENS = 3500
 MAX_ERROR_RETRIES = 3
@@ -25,6 +26,8 @@ PROMPT_TEMPLATE = """The following is a friendly conversation between a human an
                     AI:"""
 
 SPEC_TEMPLATE = """I want to create {user_input}. Give me a terraform template. But before doing so ask me at most {MAX_QUESTIONS} clarifying questions. No question should ask about resource naming. Each question should have a fixed number of possible answers."""
+
+REPLICATE_CODE_LLAMA_ENDPOINT = "meta/codellama-34b-instruct:b17fdb44c843000741367ae3d73e2bb710d7428a662238ddebbf4302db2b5422"
 
 
 class Question(BaseModel):
@@ -67,15 +70,11 @@ class LlamaLLM(LLM):
     def _llm_type(self) -> str:
         return "llama"
 
-    @property
-    def _replicate_endpoint(self) -> str:
-        return "meta/codellama-34b-instruct:b17fdb44c843000741367ae3d73e2bb710d7428a662238ddebbf4302db2b5422"
-
     # this is the implemented langchain method so that the chain's invoke method works
     def _call(self, prompt: str, stop=None) -> str:
         resp = ""
         container = st.empty()
-        output = replicate.run(self._replicate_endpoint, input={
+        output = replicate.run(REPLICATE_CODE_LLAMA_ENDPOINT, input={
                                "prompt": prompt, "max_tokens": 4000})
         for token in output:
             resp += token
@@ -108,10 +107,13 @@ class OpenAIChatbot(Chatbot):
                               temperature=self.temperature, streaming=True)
         PROMPT = PromptTemplate(
             input_variables=["history", "input"], template=PROMPT_TEMPLATE)
-        self.chain = ConversationChain(prompt=PROMPT, llm=self.llm, callbacks=[FileCallbackHandler(os.getenv("LOGFILE"))], memory=ConversationBufferMemory())
+        self.chain = ConversationChain(prompt=PROMPT, llm=self.llm, callbacks=[
+                                       FileCallbackHandler(os.getenv("LOGFILE"))], memory=ConversationBufferMemory())
 
-        self.llm_with_functions = ChatOpenAI(model_name=self.model_id, temperature=self.temperature).bind(functions=[convert_pydantic_to_openai_function(TemplateSpecQuestionsParams)])
-        self.spec_chain = ChatPromptTemplate.from_messages([("user", "{prompt}")]) | self.llm_with_functions | JsonOutputFunctionsParser()
+        self.llm_with_functions = ChatOpenAI(model_name=self.model_id, temperature=self.temperature).bind(
+            functions=[convert_pydantic_to_openai_function(TemplateSpecQuestionsParams)])
+        self.spec_chain = ChatPromptTemplate.from_messages(
+            [("user", "{prompt}")]) | self.llm_with_functions | JsonOutputFunctionsParser()
 
     def spec_gathering_response(self, user_input: str) -> list[Question]:
         resp = self.spec_chain.invoke({"prompt": SPEC_TEMPLATE.format(
@@ -150,13 +152,16 @@ class OpenAIChatbot(Chatbot):
 
 class LLamaChatbot(OpenAIChatbot):
 
-    def __init__(self) -> None:
+    def __init__(self, temperature: float, stream_handler_class: any) -> None:
+        # initialize openai chatbot for q_a prompt
         super().__init__(model_id=os.getenv("OPENAI_MODEL_ID"),
-                         temperature=0, stream_handler_class=NoopStreamHandler)
-        self.llm = LlamaLLM()
+                         temperature=temperature, stream_handler_class=stream_handler_class)
+        self.llm = Replicate(streaming=True, model=REPLICATE_CODE_LLAMA_ENDPOINT, model_kwargs={
+                             "temperature": temperature, "max_length": MAX_TOKENS})
         self.chain.llm = self.llm
 
     def response(self, prompt: str) -> str:
+        self.chain.llm.callbacks = [self.stream_handler_class()]
         resp = self.chain.run(prompt)
         logger.info(resp)
         return resp

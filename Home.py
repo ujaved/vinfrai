@@ -12,13 +12,15 @@ display_options = ['template', 'llm notes']
 
 WELCOME_MSG = 'Welcome to InfraBot! Your bespoke AI-powered Terraform IaaS builder!'
 
+
 def llm_selection_cb():
     # noop when no session has been started
     if len(st.session_state.sessions) == 0:
         return
     cur_session = st.session_state.sessions[-1]
     if st.session_state.llm == "codellama":
-        cur_session.chatbot = LLamaChatbot()
+        cur_session.chatbot = LLamaChatbot(
+            temperature=0, stream_handler_class=StreamlitStreamHandler)
     else:
         cur_session.chatbot = OpenAIChatbot(model_id=os.getenv(
             "OPENAI_MODEL_ID"), temperature=0, stream_handler_class=StreamlitStreamHandler)
@@ -31,6 +33,8 @@ def validate_template_cb():
     cur_session = st.session_state.sessions[-1]
     cur_session.static_validate = st.session_state.validate_template
     st.session_state.disable_validate_checkbox = True
+
+
 def main():
 
     st.set_page_config(
@@ -55,7 +59,7 @@ def main():
 
     if 'disable_llm_selection' not in st.session_state:
         st.session_state.disable_llm_selection = False
-        
+
     if 'disable_validate_checkbox' not in st.session_state:
         st.session_state.disable_validate_checkbox = False
 
