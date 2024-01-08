@@ -10,11 +10,11 @@ from yaspin import yaspin
 from chatbot import LLamaChatbot, OpenAIChatbot, NoopStreamHandler
 
 
-def get_qa_spec_prompt(user_spec: str, chat_session: CliSession, prompt_session: PromptSession) -> str:
+def get_qa_spec_prompt(chat_session: CliSession, prompt_session: PromptSession) -> str:
     print(AI_STARTER_MSG)
     with yaspin(text="generating clarifying questions", color="yellow"):
         chat_session.user_q_a = [
-            (q, '') for q in chat_session.chatbot.spec_gathering_response(user_spec)]
+            (q, '') for q in chat_session.chatbot.spec_gathering_response(chat_session.initial_spec)]
     for i, q_a in enumerate(chat_session.user_q_a):
         user_answer = prompt_session.prompt(str(q_a[0])).strip()
         if user_answer.isdigit():
@@ -45,7 +45,8 @@ def main():
     user_spec = prompt_session.prompt(
         WELCOME_MSG + '\nPlease specify what you would like in your template. >')
 
-    prompt = get_qa_spec_prompt(user_spec, chat_session, prompt_session)
+    chat_session.initial_spec = user_spec
+    prompt = get_qa_spec_prompt(chat_session, prompt_session)
 
     while True:
         try:
