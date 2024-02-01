@@ -91,4 +91,5 @@ def validate_terratest(go_code: str, terraform_dir_name: str, terratest_dir_name
         result = subprocess.run(['go', 'test', '-v'], capture_output=True, text=True)
         rv = result.stderr     
     os.chdir('../../')
+    logger.info("error running go code: " + str(rv))
     return rv

@@ -9,9 +9,7 @@ from langchain.callbacks.base import BaseCallbackHandler
 from langchain.utils.openai_functions import convert_pydantic_to_openai_function
 from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
 import streamlit as st
-from langchain.llms.base import LLM
 import os
-import replicate
 from utils import logger
 from langchain.llms import Replicate
 
@@ -55,32 +53,17 @@ class StreamlitStreamHandler(BaseCallbackHandler):
         self.text = ""
         self.container = st.empty()
 
-    def on_llm_new_token(self, token: str, **kwargs) -> None:
+    def on_llm_new_token(self, token: str, **kwargs):
         self.text += token
         self.container.markdown(self.text)
+        
+class SimpleStreamHandler(BaseCallbackHandler):
+    def on_llm_new_token(self, token: str, **kwargs):
+        print(token, end ="")
 
 
 class NoopStreamHandler(BaseCallbackHandler):
     pass
-
-
-class LlamaLLM(LLM):
-
-    @property
-    def _llm_type(self) -> str:
-        return "llama"
-
-    # this is the implemented langchain method so that the chain's invoke method works
-    def _call(self, prompt: str, stop=None) -> str:
-        resp = ""
-        container = st.empty()
-        output = replicate.run(REPLICATE_CODE_LLAMA_ENDPOINT, input={
-                               "prompt": prompt, "max_tokens": 4000})
-        for token in output:
-            resp += token
-            container.markdown(resp)
-        return resp
-
 
 class Chatbot:
     def __init__(self, model_id: str, temperature: float, stream_handler_class: any) -> None:

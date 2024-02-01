@@ -216,7 +216,8 @@ class CliSession(Session):
 
         num_retry = 0
         while err and num_retry < MAX_ERROR_RETRIES:
-            with self.generate_ctx(text='regenerating terratest code'):
+            with self.generate_ctx():
+            #with self.generate_ctx(text='regenerating terratest code'):
                 response = self.chatbot.response(
                     f'while compiling the go test code there were this error:\n{err}\n Fix the test code template by correcting the error')
                 parsed = parse_llm_response_mult_lang(

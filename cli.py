@@ -7,7 +7,8 @@ from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import SqlLexer
 import os
 from yaspin import yaspin
-from chatbot import LLamaChatbot, OpenAIChatbot, NoopStreamHandler
+from chatbot import LLamaChatbot, OpenAIChatbot, SimpleStreamHandler
+from contextlib import nullcontext
 
 
 def get_qa_spec_prompt(chat_session: CliSession, prompt_session: PromptSession) -> str:
@@ -35,11 +36,11 @@ def main():
     download_terraform(os.getenv("TERRAFORM_VERSION"))
 
     chatbot = OpenAIChatbot(model_id=os.getenv(
-        "OPENAI_MODEL_ID"), temperature=0, stream_handler_class=NoopStreamHandler)
+        "OPENAI_MODEL_ID"), temperature=0, stream_handler_class=SimpleStreamHandler)
     if args.model_id == "codellama":
-        chatbot = LLamaChatbot(temperature=0, stream_handler_class=NoopStreamHandler)
+        chatbot = LLamaChatbot(temperature=0, stream_handler_class=SimpleStreamHandler)
     chat_session = CliSession(id=0, terratest=args.terratest, validate_ctx=yaspin,
-                              generate_ctx=yaspin, chatbot=chatbot, static_validate=args.validate)
+                              generate_ctx=nullcontext, chatbot=chatbot, static_validate=args.validate)
 
     prompt_session = PromptSession(lexer=PygmentsLexer(SqlLexer))
     user_spec = prompt_session.prompt(
@@ -54,9 +55,9 @@ def main():
                 prompt = prompt_session.prompt('> ')
             if args.terratest:
                 prompt += "\n Regenerate the terratest file."
-            chat_session.get_terraform_template(
-                spec=prompt, **{"text": "generating terraform template", "color": "green"})
-            print(chat_session.terraform_template)
+            #chat_session.get_terraform_template(spec=prompt, **{"text": "generating terraform template", "color": "green"})
+            chat_session.get_terraform_template(spec=prompt)
+            print()
             prompt = prompt_session.prompt('> ')
         except KeyboardInterrupt:
             continue
