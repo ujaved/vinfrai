@@ -43,7 +43,7 @@ def main():
 
     prompt_session = PromptSession(lexer=PygmentsLexer(SqlLexer))
     user_spec = prompt_session.prompt(
-        WELCOME_MSG + '\nPlease specify what you would like in your template. >')
+        WELCOME_MSG + '\nPlease specify what you would like in your template.\n\n >')
 
     chat_session.initial_spec = user_spec
     prompt = get_qa_spec_prompt(chat_session, prompt_session)
@@ -53,7 +53,7 @@ def main():
             while len(prompt.strip()) == 0:
                 prompt = prompt_session.prompt('> ')
             if args.terratest:
-                prompt += "\n Regenerate the terratest file."
+                prompt += "\n Generate the terratest file."
             #chat_session.get_terraform_template(spec=prompt, **{"text": "generating terraform template", "color": "green"})
             chat_session.get_terraform_template(spec=prompt)
             print()

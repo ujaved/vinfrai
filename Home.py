@@ -10,7 +10,7 @@ openai_model_id = os.getenv("OPENAI_MODEL_ID")
 display_options = ['template', 'llm notes']
 
 
-WELCOME_MSG = 'Welcome to InfraBot! Your bespoke AI-powered Terraform IaaS builder!'
+WELCOME_MSG = 'Welcome to Vinfrai! Your bespoke LLM-powered Terraform IaC builder!'
 
 
 def llm_selection_cb():
