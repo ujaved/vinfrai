@@ -91,7 +91,7 @@ class OpenAIChatbot(Chatbot):
         PROMPT = PromptTemplate(
             input_variables=["history", "input"], template=PROMPT_TEMPLATE)
         self.chain = ConversationChain(prompt=PROMPT, llm=self.llm, callbacks=[
-                                       FileCallbackHandler(os.getenv("LOGFILE"))], memory=ConversationBufferMemory())
+                                       FileCallbackHandler(os.getenv("LOGFILE", "output.log"))], memory=ConversationBufferMemory())
 
         self.llm_with_functions = ChatOpenAI(model_name=self.model_id, temperature=self.temperature).bind(
             functions=[convert_pydantic_to_openai_function(TemplateSpecQuestionsParams)])

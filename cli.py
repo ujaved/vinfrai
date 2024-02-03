@@ -33,10 +33,9 @@ def main():
     parser.add_argument('-t', '--terratest', action='store_true')
     args = parser.parse_args()
 
-    download_terraform(os.getenv("TERRAFORM_VERSION"))
+    download_terraform(os.getenv("TERRAFORM_VERSION", "1.5.4"))
 
-    chatbot = OpenAIChatbot(model_id=os.getenv(
-        "OPENAI_MODEL_ID"), temperature=0, stream_handler_class=SimpleStreamHandler)
+    chatbot = OpenAIChatbot(model_id="gpt-4-1106-preview", temperature=0, stream_handler_class=SimpleStreamHandler)
     if args.model_id == "codellama":
         chatbot = LLamaChatbot(temperature=0, stream_handler_class=SimpleStreamHandler)
     chat_session = CliSession(id=0, terratest=args.terratest, validate_ctx=yaspin,

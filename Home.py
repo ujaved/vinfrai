@@ -72,7 +72,7 @@ def main():
 
     st.sidebar.button('End Session', key=end_session, on_click=end_session)
 
-    download_terraform(os.getenv("TERRAFORM_VERSION"))
+    download_terraform(os.getenv("TERRAFORM_VERSION", "1.5.4"))
 
     session_tab_names = ["session " + str(s.id)
                          for s in st.session_state.sessions]
